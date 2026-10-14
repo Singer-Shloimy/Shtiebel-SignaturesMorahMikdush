@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import SignaturePad from "signature_pad";
+import { nameToSignaturePng } from "@/lib/typed-signature";
+
+type Mode = "draw" | "type";
 
 type Props = {
   open: boolean;
@@ -22,12 +25,20 @@ export function SignatureModal({
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const padRef = useRef<SignaturePad | null>(null);
+  const [mode, setMode] = useState<Mode>("draw");
+  const [typedName, setTypedName] = useState(name);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [thanks, setThanks] = useState(false);
 
   useEffect(() => {
-    if (!open || alreadySigned || thanks) return;
+    if (open && !alreadySigned && !thanks) {
+      setTypedName(name);
+    }
+  }, [open, name, alreadySigned, thanks]);
+
+  useEffect(() => {
+    if (!open || alreadySigned || thanks || mode !== "draw") return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -54,11 +65,27 @@ export function SignatureModal({
       padRef.current?.off();
       padRef.current = null;
     };
-  }, [open, alreadySigned, thanks]);
+  }, [open, alreadySigned, thanks, mode]);
 
   if (!open) return null;
 
-  async function submit() {
+  async function postSignature(signatureDataUrl: string) {
+    const res = await fetch("/api/sign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, signatureDataUrl }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || "שגיאה בשמירה");
+      return false;
+    }
+    setThanks(true);
+    onSigned();
+    return true;
+  }
+
+  async function submitDraw() {
     if (!padRef.current || padRef.current.isEmpty()) {
       setError("נא לחתום בשדה החתימה");
       return;
@@ -66,25 +93,41 @@ export function SignatureModal({
     setSubmitting(true);
     setError("");
     try {
-      const signatureDataUrl = padRef.current.toDataURL("image/png");
-      const res = await fetch("/api/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug, signatureDataUrl }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "שגיאה בשמירה");
-        setSubmitting(false);
-        return;
-      }
-      setThanks(true);
-      onSigned();
+      await postSignature(padRef.current.toDataURL("image/png"));
     } catch {
       setError("שגיאת רשת");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submitTyped() {
+    const text = typedName.trim();
+    if (!text) {
+      setError("נא להזין שם");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      await document.fonts?.ready;
+      const signatureDataUrl = await nameToSignaturePng(text, 520, 140);
+      if (!signatureDataUrl.startsWith("data:image/png")) {
+        setError("שגיאה ביצירת החתימה");
+        return;
+      }
+      await postSignature(signatureDataUrl);
+    } catch (err) {
+      console.error("typed signature failed", err);
+      setError("שגיאה ביצירת החתימה — נסה שוב או חתום ביד");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function submit() {
+    if (mode === "draw") void submitDraw();
+    else void submitTyped();
   }
 
   return (
@@ -107,23 +150,79 @@ export function SignatureModal({
             <div className="modal-header">
               <h2>חתימה דיגיטלית</h2>
               <p>
-                שלום <strong>{name}</strong>, חתום כאן כמו על הדף — חתימה קטנה
-                בכתב יד
+                שלום <strong>{name}</strong>, בחר חתימה ביד או הדפסת שם כחתימה
               </p>
             </div>
-            <div className="pad-wrap">
-              <canvas ref={canvasRef} className="sig-canvas" />
-            </div>
-            {error ? <p className="error-text">{error}</p> : null}
-            <div className="modal-actions">
+
+            <div className="sig-mode-tabs">
               <button
                 type="button"
-                className="btn-ghost"
-                onClick={() => padRef.current?.clear()}
-                disabled={submitting}
+                className={mode === "draw" ? "chip active" : "chip"}
+                onClick={() => {
+                  setMode("draw");
+                  setError("");
+                }}
               >
-                נקה
+                חתום ביד
               </button>
+              <button
+                type="button"
+                className={mode === "type" ? "chip active" : "chip"}
+                onClick={() => {
+                  setMode("type");
+                  setError("");
+                }}
+              >
+                הדפס שם כחתימה
+              </button>
+            </div>
+
+            {mode === "draw" ? (
+              <div className="pad-wrap">
+                <canvas ref={canvasRef} className="sig-canvas" />
+              </div>
+            ) : (
+              <div className="type-sig-wrap">
+                <label className="type-sig-label" htmlFor="typed-signature-name">
+                  השם שיופיע כחתימה
+                </label>
+                <input
+                  id="typed-signature-name"
+                  className="text-input type-sig-input"
+                  value={typedName}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  dir="rtl"
+                  autoComplete="name"
+                />
+                <div className="type-sig-preview" aria-hidden>
+                  <span className="type-sig-preview-text">
+                    {typedName.trim() || name}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {error ? <p className="error-text">{error}</p> : null}
+            <div className="modal-actions">
+              {mode === "draw" ? (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => padRef.current?.clear()}
+                  disabled={submitting}
+                >
+                  נקה
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => setTypedName(name)}
+                  disabled={submitting}
+                >
+                  אפס לשם שלי
+                </button>
+              )}
               <button
                 type="button"
                 className="btn-ghost"

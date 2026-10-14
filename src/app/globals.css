@@ -199,6 +199,49 @@ a {
   cursor: crosshair;
 }
 
+.sig-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.type-sig-wrap {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.type-sig-label {
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.type-sig-input {
+  margin: 0;
+}
+
+.type-sig-preview {
+  border: 1px dashed #9aa8bc;
+  border-radius: 14px;
+  background: #fbfcfe;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.type-sig-preview-text {
+  font-family: var(--font-signature), "Gveret Levin", var(--font-frank), serif;
+  font-size: clamp(1.7rem, 5.5vw, 2.4rem);
+  color: #000;
+  transform: rotate(-4deg);
+  text-align: center;
+  line-height: 1.25;
+  max-width: 100%;
+  word-break: break-word;
+}
+
 .modal-actions {
   display: flex;
   gap: 0.6rem;
